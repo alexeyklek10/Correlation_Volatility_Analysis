@@ -18,20 +18,29 @@ current regime.
 
 ## Methodology
 
-- **Multi-method historical correlation.** Pearson, Spearman, Kendall, and
-  RiskMetrics-style EWMA (λ = 0.94), all reported side-by-side in the master
-  table.
-- **Tail-regime correlation at three percentiles.** Pairwise correlation
-  restricted to the worst 5%, 10%, and 15% of anchor (SPY) days, so the
-  "diversification breaks in tails" hypothesis can be quantified rather than
-  asserted.
+- **Rank correlation as the backbone.** Spearman ρ_S (primary) and Kendall τ
+  (secondary). Pearson and the RiskMetrics-style EWMA estimator were removed
+  in the rank-correlation rework: multi-asset returns are fat-tailed and the
+  pairwise relationship between asset classes is rarely linear, so a linear
+  estimator is the wrong tool. Beta to SPY and the variance decomposition
+  remain covariance-based by definition (beta is an OLS regression slope;
+  portfolio variance is `wᵀΣw`, a covariance identity) — these are explicitly
+  not "rank-ified".
+- **Tail-regime correlation at three percentiles.** Spearman ρ_S restricted
+  to the worst 5%, 10%, and 15% of anchor (SPY) days, so the "diversification
+  breaks in tails" hypothesis can be quantified rather than asserted. Rank
+  correlation is more appropriate for tail subsets anyway, where a handful
+  of extreme observations would otherwise dominate Pearson.
 - **Variance decomposition.** Co-movement share (sum of cross-asset
   covariance contributions) vs diagonal share (sum of each asset's own
   variance contribution). This is distinct from CAPM-style market-factor
   decomposition, which is not computed here.
-- **PCA + ENB diversification scorecard.** Variance share of PC1 and PC2,
-  plus the effective number of independent bets via the entropy-based ENB
-  metric.
+- **PCA + ENB diversification scorecard.** Eigendecomposition of the
+  **Spearman correlation matrix** (not standardized returns), so the factor
+  structure is rank-consistent with the rest of the suite. Reports variance
+  share of PC1/PC2, the number of PCs needed to clear 80% / 90% cumulative
+  variance, and the effective number of independent bets via the entropy-
+  based ENB metric.
 - **Hierarchical clustering with Mantegna's distance**
   `d_ij = sqrt(0.5 * (1 - rho_ij))` (Mantegna 1999), which is a true
   ultrametric on a correlation matrix. Ward linkage.
@@ -49,9 +58,9 @@ current regime.
 - **Lo-MacKinlay variance ratio.** Random-walk null with the
   overlapping-returns asymptotic SE `sqrt(2 * (2k-1) * (k-1) / (3*k*T))` at
   lags 2, 5, 10, 20.
-- **Multiple-testing correction.** Pairwise correlation significance
-  reported with Benjamini-Hochberg FDR at α = 0.05, not just uncorrected
-  t-tests.
+- **Multiple-testing correction.** Pairwise Spearman significance reported
+  with Benjamini-Hochberg FDR at α = 0.05 (p-values from `scipy.stats.spearmanr`),
+  not just uncorrected p-values.
 
 ## How to run
 
@@ -82,9 +91,9 @@ Open via the badge below. The first cell of the volatility notebook installs
 
 | Metric | What it means | Typical / good values |
 |---|---|---|
-| Portfolio ρ to SPY | How tightly the book moves with broad US equity | Multi-asset book: 0.3 to 0.7. Single-factor: 0.85+ |
-| Portfolio β to SPY | Sensitivity coefficient vs SPY (regression slope) | Defensive: 0.3 to 0.6; balanced: 0.6 to 0.9; aggressive: > 0.9 |
-| Avg pairwise correlation | Mean of the upper-triangle Pearson correlations | < 0.30: well-diversified; 0.30 to 0.50: typical; > 0.50: redundant |
+| Portfolio ρ_S to SPY | Spearman rank correlation of the weighted portfolio to SPY — robust to outliers and non-linear monotone moves | Multi-asset book: 0.3 to 0.7. Single-factor: 0.85+ |
+| Portfolio β to SPY | OLS regression slope vs SPY (linear by definition, not rank-ified) | Defensive: 0.3 to 0.6; balanced: 0.6 to 0.9; aggressive: > 0.9 |
+| Avg pairwise correlation | Mean of the upper-triangle **Spearman ρ_S** matrix | < 0.30: well-diversified; 0.30 to 0.50: typical; > 0.50: redundant |
 | Diversification ratio | Weighted avg vol ÷ portfolio vol | > 1.5: strong; 1.2 to 1.5: moderate; < 1.2: weak |
 | Co-movement share | % of portfolio variance from cross-asset covariances | Lower means more diversified |
 | Diagonal share | % of portfolio variance from per-asset variances | Higher means more diversified |
@@ -115,6 +124,16 @@ A few caveats worth flagging before reading too much into any single number.
 - **No transaction costs, slippage, or liquidity premia.** Correlation and
   volatility estimates are pre-cost; any backtested portfolio impact
   derivable from these numbers is gross-of-cost.
+- **Rank correlation is not Pearson.** Spearman ρ_S and Kendall τ measure
+  monotone co-movement, not linear co-movement. For two assets that move
+  together in rank but with very different magnitudes, ρ_S can be high while
+  a Pearson correlation would be lower. That is the desired property here
+  — magnitude is captured separately by per-asset vol and by beta to SPY —
+  but it means correlations reported here are NOT directly substitutable
+  into closed-form formulas that assume Pearson (e.g. textbook Markowitz
+  variance from `wᵀΣw` reconstituted as `vol·corr·vol`). The variance
+  decomposition in this notebook uses the actual sample covariance for that
+  reason; it does not factor through the Spearman matrix.
 - **Yahoo data quality is uneven.** The volatility notebook applies a
   general filter for vol=0 price-change rows (vendor stub artifacts) before
   computing returns. A defensive named-row mask in `fetch_ohlc_data` covers
